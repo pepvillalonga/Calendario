@@ -59,9 +59,3 @@ El proyecto sigue una arquitectura desacoplada y modular sobre Blazor WebAssembl
     dotnet watch
     ```
 4.  Acceda localmente a través de `http://localhost:5000` (o el puerto asignado por el sistema).
-
----
-
-> [!NOTE]
-> Este proyecto ha sido estructurado para demostrar el potencial de Blazor WebAssembly en la creación de herramientas de productividad eficientes y visualmente atractivas.
-

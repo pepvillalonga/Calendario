@@ -1,0 +1,429 @@
+@page "/"
+<PageTitle>Gestor de Calendarios</PageTitle>
+@using CalendarApp.Models
+@using System.Text
+@using System.Globalization
+@inject IJSRuntime JS
+
+
+<div class="container-fluid vh-100 bg-white">
+    <div class="row h-100">
+
+        <div class="col-md-3 bg-light p-4 border-end d-flex flex-column h-100">
+            <h4 class="fw-bold mb-4 text-dark">Mi Calendario</h4>
+            
+            <div class="flex-grow-1 overflow-auto mb-4">
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <h6 class="text-uppercase text-secondary fw-bold small m-0">Lista de Calendarios</h6>
+                    <button class="btn btn-sm btn-primary rounded-circle shadow-sm" style="width: 30px; height: 30px;" @onclick="OpenCreateCalendarModal" title="Nuevo Calendario">+</button>
+                </div>
+                
+                <div class="list-group list-group-flush">
+                    @if (MisCalendarios.Count == 0)
+                    {
+                        <div class="text-center text-muted small py-3">No hay calendarios</div>
+                    }
+                    @foreach (var cal in MisCalendarios)
+                    {
+                        <div class="list-group-item bg-transparent px-0 border-0 d-flex align-items-center">
+                            <input class="form-check-input me-3 mt-0" type="checkbox" 
+                                   checked="@cal.IsVisible" 
+                                   style="width: 1.2em; height: 1.2em; cursor:pointer; background-color: @(cal.IsVisible ? cal.Color : "transparent"); border-color: @cal.Color;" 
+                                   @onchange="() => PincharCheckCalendario(cal)" />
+                            
+                            <span class="text-truncate flex-grow-1 fw-medium user-select-none" @onclick="() => PincharCheckCalendario(cal)" style="cursor:pointer;">@cal.Name</span>
+                            
+                            <div class="ms-auto d-flex gap-2">
+                                <button class="btn-icon btn-edit" @onclick="() => EditarEsteCalendario(cal)" title="Editar">✎</button>
+                                <button class="btn-icon btn-delete" @onclick="() => BorrarEsteCalendario(cal)" title="Eliminar">✕</button>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="card sidebar-card bg-white p-3 mt-auto">
+                <h6 class="fw-bold small text-muted mb-3">HERRAMIENTAS</h6>
+                
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <span class="small fw-bold">Modo Noche</span>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" checked="@IsDarkMode" @onchange="CambiarTema">
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label small mb-1">Cargar archivo (.ics)</label>
+                    <InputFile OnChange="HacerImportacion" class="form-control form-control-sm" />
+                </div>
+                <button class="btn btn-outline-secondary btn-sm w-100" @onclick="AbrirModalExportar">
+                    Exportar Calendarios
+                </button>
+            </div>
+        </div>
+
+        <div class="col-md-9 p-4 d-flex flex-column">
+            
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div class="d-flex align-items-center gap-3">
+                    <div class="btn-group shadow-sm">
+                        <button class="btn btn-outline-secondary px-3 @(VistaActual == "Mes" ? "active" : "")" @onclick='() => CambiarVista("Mes")'>Mes</button>
+                    </div>
+                </div>
+
+                <div class="d-flex align-items-center">
+                    <button class="btn btn-outline-secondary rounded-circle shadow-sm d-flex align-items-center justify-content-center me-3" style="width:48px;height:48px;" @onclick="IrAtras">
+                        &lt;
+                    </button>
+                    
+                    <h2 class="fw-bold text-dark m-0 text-center" style="min-width: 250px;">
+                        @if(VistaActual == "Mes")
+                        {
+                            @FechaVisible.ToString("MMMM", new CultureInfo("es-ES")).ToUpper() <span class="text-muted fw-light ms-2">@FechaVisible.Year</span>
+                        }
+                    </h2>
+                    
+                    <button class="btn btn-outline-secondary rounded-circle shadow-sm d-flex align-items-center justify-content-center ms-3" style="width:48px;height:48px;" @onclick="IrAdelante">
+                        &gt;
+                    </button>
+                </div>
+                
+                <div style="width: 150px;"></div>
+            </div>
+
+            @if (VistaActual == "Mes")
+            {
+                <div class="calendar-container">
+                    <div class="calendar-header">
+                        <div class="calendar-header-cell">LUN</div>
+                        <div class="calendar-header-cell">MAR</div>
+                        <div class="calendar-header-cell">MIE</div>
+                        <div class="calendar-header-cell">JUE</div>
+                        <div class="calendar-header-cell">VIE</div>
+                        <div class="calendar-header-cell">SAB</div>
+                        <div class="calendar-header-cell">DOM</div>
+                    </div>
+
+                    <div class="calendar-body">
+                        @foreach (var semana in ListaSemanas)
+                        {
+                            foreach (var dia in semana)
+                            {
+                                var esteMes = dia.Month == FechaVisible.Month;
+                                var resultado = CalcularEventosParaEsteDia(dia);
+                                
+                                <div class="cal-cell @(esteMes ? "" : "bg-light")" 
+                                     @onclick="() => ClickEnDia(dia, resultado)">
+                                    <span class="day-number @(esteMes ? "" : "opacity-50")">@dia.Day</span>
+                                    
+                                    <div class="d-flex flex-column gap-1 overflow-hidden w-100">
+                                        @{ int contador = 0; }
+                                        @foreach (var ev in resultado.MatchedEvents)
+                                        {
+                                            if (contador < 4)
+                                            {
+                                                var colorElemento = "#ccc";
+                                                foreach(var c in MisCalendarios) { if(c.Id == ev.ParentCalendarId) colorElemento = c.Color; }
+
+                                                <div class="event-pill" style="background-color: @colorElemento;">
+                                                    @if (ev.StartTime.HasValue)
+                                                    {
+                                                        <span class="fw-bold me-1">@ev.StartTime.Value.ToString(@"hh\:mm")</span>
+                                                    }
+                                                    @ev.Title
+                                                </div>
+                                                contador++;
+                                            }
+                                        }
+                                        @if(resultado.MatchedEvents.Count > 4)
+                                        {
+                                            <small class="text-muted text-center">+@(resultado.MatchedEvents.Count - 4) más</small>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@if (ShowExportModal)
+{
+    <div class="modal-backdrop-custom"></div>
+    <div class="modal modal-custom fade show">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Exportar a archivo</h5>
+                    <button type="button" class="btn-close" @onclick="() => ShowExportModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nombre del archivo</label>
+                        <input class="form-control" @bind="NombreArchivoExportar" />
+                    </div>
+                    <p class="small text-muted">Selecciona qué calendarios quieres meter en el archivo:</p>
+                    <div class="list-group">
+                        @foreach(var c in MisCalendarios)
+                        {
+                            <label class="list-group-item">
+                                <input type="checkbox" @onchange='(e) => { if((bool)e.Value) { if(!IDsParaExportar.Contains(c.Id)) IDsParaExportar.Add(c.Id); } else IDsParaExportar.Remove(c.Id); }' checked="@IDsParaExportar.Contains(c.Id)" />
+                                @c.Name
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary w-100" @onclick="HacerLaExportacion">Descargar .ics</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowCalendarModal)
+{
+    <div class="modal-backdrop-custom"></div>
+    <div class="modal modal-custom fade show">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Calendario</h5>
+                    <button type="button" class="btn-close" @onclick="() => ShowCalendarModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Nombre</label>
+                        <input class="form-control" @bind="TempCalendar.Name" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Color</label>
+                        <input type="color" class="form-control form-control-color" @bind="TempCalendar.Color" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" @onclick="GuardarCalendario">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (ShowEventModal)
+{
+    <div class="modal-backdrop-custom"></div>
+    <div class="modal modal-custom fade show">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">@DiaSeleccionado.ToShortDateString()</h5>
+                    <button type="button" class="btn-close" @onclick="() => ShowEventModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    @foreach (var ev in ResultadoSeleccionado.MatchedEvents)
+                    {
+                        <div class="d-flex justify-content-between border-bottom py-2">
+                            <span>@ev.Title</span>
+                            <button class="btn btn-danger btn-sm" @onclick="() => BorrarEvento(ev)">X</button>
+                        </div>
+                    }
+
+                    <div class="mt-3 p-2 bg-light">
+                        <input class="form-control mb-1" placeholder="¿Qué harás?" @bind="NuevoEvento.Title" />
+                        <select class="form-select mb-1" @bind="NuevoEvento.Recurrence">
+                            <option value="@RecurrenceType.None">Solo una vez</option>
+                            <option value="@RecurrenceType.Daily">Diario</option>
+                            <option value="@RecurrenceType.Weekly">Semanal</option>
+                        </select>
+                        <button class="btn btn-success w-100" @onclick="AgregarElEvento">Añadir</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<CalendarDefinition> MisCalendarios = new List<CalendarDefinition>();
+    private DateTime FechaVisible = DateTime.Today;
+    private List<List<DateTime>> ListaSemanas = new List<List<DateTime>>();
+    
+    private string VistaActual = "Mes";
+    private bool IsDarkMode = false;
+    private bool ShowCalendarModal = false;
+    private bool IsEditingCalendar = false;
+    private CalendarDefinition TempCalendar = new CalendarDefinition();
+    private bool ShowEventModal = false;
+    private DateTime DiaSeleccionado;
+    private CalendarMatchResult ResultadoSeleccionado = new CalendarMatchResult();
+    private CalendarEvent NuevoEvento = new CalendarEvent();
+
+    protected override void OnInitialized()
+    {
+        if (MisCalendarios.Count == 0)
+        {
+            MisCalendarios.Add(new CalendarDefinition { Name = "General", Color = "#3788d8" });
+        }
+        RecalcularGrid();
+    }
+
+    private void RecalcularGrid()
+    {
+        ListaSemanas.Clear();
+        DateTime primero = new DateTime(FechaVisible.Year, FechaVisible.Month, 1);
+        int desfase = (int)primero.DayOfWeek - (int)DayOfWeek.Monday;
+        if (desfase < 0) desfase += 7;
+        
+        DateTime dia = primero.AddDays(-desfase);
+
+        for (int i = 0; i < 6; i++)
+        {
+            List<DateTime> semana = new List<DateTime>();
+            for (int j = 0; j < 7; j++)
+            {
+                semana.Add(dia);
+                dia = dia.AddDays(1);
+            }
+            ListaSemanas.Add(semana);
+        }
+    }
+
+    private CalendarMatchResult CalcularEventosParaEsteDia(DateTime dia)
+    {
+        var result = new CalendarMatchResult();
+        foreach (var cal in MisCalendarios)
+        {
+            if (cal.IsVisible == false) continue;
+            foreach (var ev in cal.Events)
+            {
+                bool si = false;
+                if (dia.Date >= ev.Start.Date)
+                {
+                    if (ev.Recurrence == RecurrenceType.None)
+                    {
+                        if (dia.Date >= ev.Start.Date && dia.Date <= ev.End.Date) si = true;
+                    }
+                    else if (ev.Recurrence == RecurrenceType.Daily) si = true;
+                    else if (ev.Recurrence == RecurrenceType.Weekly)
+                    {
+                        foreach (var d in ev.RecurrenceDays)
+                        {
+                            if (d == dia.DayOfWeek) si = true;
+                        }
+                        if (dia.DayOfWeek == ev.Start.DayOfWeek) si = true;
+                    }
+                }
+                if (si) result.MatchedEvents.Add(ev);
+            }
+        }
+        return result;
+    }
+
+    private void PincharCheckCalendario(CalendarDefinition cal) => cal.IsVisible = !cal.IsVisible;
+    private bool ShowExportModal = false;
+    private string NombreArchivoExportar = "mis_eventos";
+    private List<string> IDsParaExportar = new List<string>();
+
+    private void AbrirModalExportar()
+    {
+        IDsParaExportar.Clear();
+        foreach(var c in MisCalendarios) {
+            if(c.IsVisible) IDsParaExportar.Add(c.Id);
+        }
+        ShowExportModal = true;
+    }
+
+    private async Task HacerLaExportacion() {
+        if (string.IsNullOrWhiteSpace(NombreArchivoExportar)) NombreArchivoExportar = "calendario_junior";
+        
+        string txt = "BEGIN:VCALENDAR\r\n";
+        txt += "VERSION:2.0\r\n";
+        txt += "PRODID:-//JuniorDev//CalendarApp//ES\r\n";
+
+        foreach(var cal in MisCalendarios) {
+            bool exportarEste = false;
+            foreach(var id in IDsParaExportar) {
+                if(id == cal.Id) { exportarEste = true; break; }
+            }
+
+            if(exportarEste) {
+                foreach(var ev in cal.Events) {
+                    txt += "BEGIN:VEVENT\r\n";
+                    txt += "SUMMARY:" + ev.Title + "\r\n";
+                    txt += "DTSTART:" + ev.Start.ToString("yyyyMMddTHHmmss") + "\r\n";
+                    txt += "DTEND:" + ev.End.ToString("yyyyMMddTHHmmss") + "\r\n";
+                    
+                    if(ev.Recurrence == RecurrenceType.Daily) {
+                        txt += "RRULE:FREQ=DAILY\r\n";
+                    }
+                    else if(ev.Recurrence == RecurrenceType.Weekly) {
+                        txt += "RRULE:FREQ=WEEKLY\r\n";
+                    }
+                    txt += "END:VEVENT\r\n";
+                }
+            }
+        }
+        txt += "END:VCALENDAR";
+
+        await JS.InvokeVoidAsync("fileUtil.saveAsFile", NombreArchivoExportar + ".ics", txt);
+        ShowExportModal = false;
+    }
+    private async Task CambiarTema(ChangeEventArgs e)
+    {
+        IsDarkMode = (bool)e.Value;
+        await JS.InvokeVoidAsync("document.documentElement.setAttribute", "data-theme", IsDarkMode ? "dark" : "light");
+    }
+
+    private void IrAtras() { FechaVisible = FechaVisible.AddMonths(-1); RecalcularGrid(); }
+    private void IrAdelante() { FechaVisible = FechaVisible.AddMonths(1); RecalcularGrid(); }
+    private void CambiarVista(string v) { VistaActual = v; RecalcularGrid(); }
+    private void OpenCreateCalendarModal() { TempCalendar = new CalendarDefinition(); IsEditingCalendar = false; ShowCalendarModal = true; }
+    private void EditarEsteCalendario(CalendarDefinition c) { TempCalendar = c; IsEditingCalendar = true; ShowCalendarModal = true; }
+    private void GuardarCalendario() { if (!IsEditingCalendar) MisCalendarios.Add(TempCalendar); ShowCalendarModal = false; }
+    private void BorrarEsteCalendario(CalendarDefinition c) => MisCalendarios.Remove(c);
+    private void ClickEnDia(DateTime d, CalendarMatchResult r) { DiaSeleccionado = d; ResultadoSeleccionado = r; NuevoEvento = new CalendarEvent { Start = d, End = d }; ShowEventModal = true; }
+
+    private void AgregarElEvento()
+    {
+        if (string.IsNullOrEmpty(NuevoEvento.Title)) return;
+        foreach(var c in MisCalendarios) {
+            if(c.IsVisible) {
+                NuevoEvento.ParentCalendarId = c.Id;
+                c.Events.Add(NuevoEvento);
+                break;
+            }
+        }
+        ShowEventModal = false;
+    }
+
+    private void BorrarEvento(CalendarEvent ev)
+    {
+        foreach (var cal in MisCalendarios) {
+            if (cal.Id == ev.ParentCalendarId) { cal.Events.Remove(ev); break; }
+        }
+        ResultadoSeleccionado = CalcularEventosParaEsteDia(DiaSeleccionado);
+    }
+
+    private async Task HacerImportacion(InputFileChangeEventArgs e)
+    {
+        try {
+            var f = e.File;
+            var stream = f.OpenReadStream();
+            var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
+            var t = Encoding.UTF8.GetString(ms.ToArray());
+            var lineas = t.Split('\n');
+            var c = new CalendarDefinition { Name = "Importado" };
+            CalendarEvent ev = null;
+            foreach (var l in lineas) {
+                if (l.Contains("BEGIN:VEVENT")) ev = new CalendarEvent();
+                if (l.Contains("SUMMARY:") && ev != null) ev.Title = l.Replace("SUMMARY:", "").Trim();
+                if (l.Contains("END:VEVENT") && ev != null) { c.Events.Add(ev); ev = null; }
+            }
+            MisCalendarios.Add(c);
+        } catch { }
+    }
+}
